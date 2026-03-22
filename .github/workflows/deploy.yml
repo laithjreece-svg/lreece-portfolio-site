@@ -9,6 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -16,11 +17,12 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
 
-      - name: Upload static assets to S3 (long cache)
+      # Upload CSS, JS, images — long cache (1 year), immutable
+      - name: Upload static assets to S3
         run: |
           aws s3 sync . s3://${{ secrets.S3_BUCKET }} \
             --delete \
@@ -28,9 +30,11 @@ jobs:
             --exclude "*.html" \
             --exclude "*.json" \
             --exclude ".git/*" \
-            --exclude ".github/*"
+            --exclude ".github/*" \
+            --exclude "terraform/*"
 
-      - name: Upload HTML and JSON to S3 (no cache)
+      # Upload HTML and JSON — no cache (always fresh)
+      - name: Upload HTML and JSON to S3
         run: |
           aws s3 sync . s3://${{ secrets.S3_BUCKET }} \
             --cache-control "public, max-age=0, must-revalidate" \
@@ -38,6 +42,7 @@ jobs:
             --include "*.html" \
             --include "*.json"
 
+      # Bust the CloudFront edge cache so users see the new version immediately
       - name: Invalidate CloudFront cache
         run: |
           aws cloudfront create-invalidation \
@@ -47,6 +52,9 @@ jobs:
       - name: Deployment confirmation
         run: |
           echo "Deployment completed successfully"
-          echo "Timestamp: $(date -u)"
-          echo "Branch: ${{ github.ref_name }}"
-          echo "Commit: ${{ github.sha }}"
+          echo "Timestamp : $(date -u)"
+          echo "Branch    : ${{ github.ref_name }}"
+          echo "Commit    : ${{ github.sha }}"
+          echo "URL       : https://$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Id=='${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}'].DomainName" \
+            --output text)"
